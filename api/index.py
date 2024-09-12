@@ -1,27 +1,22 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import gensim.downloader as api
 from fastapi.middleware.cors import CORSMiddleware
+import spacy
+from typing import Optional
 
-# Load the pre-trained Word2Vec model
-print("Loading word vectors, this may take a few minutes...")
-word_vectors = api.load("glove-twitter-25")
-print("Word vectors loaded successfully.")
-
-# Initialize FastAPI app
 app = FastAPI()
 
-# Add CORS middleware to handle cross-origin requests
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    # Adjust this to restrict allowed origins in production
-    allow_origins=["*"],
+    allow_origins=["*"],  # Replace with your domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize global variable for the secret word
+# Global variables
+nlp: Optional[spacy.language.Language] = None
 secret_word = None
 
 # Models for input validation
@@ -36,6 +31,22 @@ class GuessWords(BaseModel):
     word2: str
 
 
+def load_model():
+    """Load the Spacy model if not already loaded."""
+    global nlp
+    if nlp is None:
+        print("Loading Spacy model...")
+        nlp = spacy.load("en_core_web_md")  # Use a smaller Spacy model
+        print("Spacy model loaded.")
+
+
+def calculate_similarity(word1, word2):
+    """Calculate cosine similarity using Spacy vectors."""
+    vec1 = nlp(word1).vector
+    vec2 = nlp(word2).vector
+    return vec1.dot(vec2) / (vec1.norm() * vec2.norm())
+
+
 def calculate_heat_score(similarity):
     """Convert cosine similarity to a 'heat' score from 0 to 10."""
     heat_score = (similarity + 1) * 5  # Normalize to 0-10
@@ -45,9 +56,7 @@ def calculate_heat_score(similarity):
 @app.post("/api/set_secret")
 async def set_secret(secret: SecretWord):
     global secret_word
-    if secret.word not in word_vectors:
-        raise HTTPException(
-            status_code=400, detail="The word is not in the vocabulary.")
+    load_model()  # Load model on demand
     secret_word = secret.word
     return {"message": f"Secret word '{secret_word}' is set."}
 
@@ -55,15 +64,13 @@ async def set_secret(secret: SecretWord):
 @app.post("/api/compare")
 async def compare_words(guess: GuessWords):
     global secret_word
+    load_model()  # Load model on demand
+
     if not secret_word:
         raise HTTPException(status_code=400, detail="Secret word not set.")
 
-    if guess.word1 not in word_vectors or guess.word2 not in word_vectors:
-        raise HTTPException(
-            status_code=400, detail="One or both words are not in the vocabulary.")
-
-    similarity1 = word_vectors.similarity(secret_word, guess.word1)
-    similarity2 = word_vectors.similarity(secret_word, guess.word2)
+    similarity1 = calculate_similarity(secret_word, guess.word1)
+    similarity2 = calculate_similarity(secret_word, guess.word2)
 
     heat_score1 = calculate_heat_score(similarity1)
     heat_score2 = calculate_heat_score(similarity2)
