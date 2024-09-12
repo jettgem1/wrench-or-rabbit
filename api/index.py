@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Load the pre-trained Word2Vec model
 print("Loading word vectors, this may take a few minutes...")
-word_vectors = api.load("word2vec-google-news-300")
+word_vectors = api.load("glove-twitter-25")
 print("Word vectors loaded successfully.")
 
 # Initialize FastAPI app
